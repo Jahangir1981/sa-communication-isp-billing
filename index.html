@@ -30,7 +30,7 @@
       <div class="stat"><small>মেয়াদ শেষ/বকেয়া</small><strong id="statOverdue">0</strong></div>
     </div>
     <nav class="tabs" style="margin-top:14px">
-      <button data-tab="customers">গ্রাহক</button><button data-tab="invoices" class="secondary">বিল</button><button data-tab="payments" class="secondary">পেমেন্ট/রশিদ</button><button data-tab="reports" class="secondary">রিপোর্ট</button><button data-tab="users" class="secondary" id="usersTab">ব্যবহারকারী</button>
+      <button data-tab="customers">গ্রাহক</button><button data-tab="invoices" class="secondary">বিল</button><button data-tab="payments" class="secondary">পেমেন্ট/রশিদ</button><button data-tab="reports" class="secondary">রিপোর্ট</button><button data-tab="users" class="secondary admin-only hidden" id="usersTab">Staff/ব্যবহারকারী</button><button data-tab="company" class="secondary admin-only hidden" id="companyTab">কোম্পানি Profile</button>
     </nav>
     <section id="tab-customers" class="tabpane">
       <div class="card"><div class="sectionhead"><h2 id="customerFormTitle">নতুন গ্রাহক যোগ</h2></div>
@@ -71,8 +71,20 @@
         <form id="roleForm"><label>ব্যবহারকারীর UID *</label><input id="uUid" required><label>নাম</label><input id="uName"><label>ভূমিকা</label><select id="uRole"><option value="staff">কর্মচারী (Staff)</option><option value="admin">Admin</option></select><button style="margin-top:12px">ভূমিকা সংরক্ষণ</button></form><p id="userMsg" class="muted"></p>
       </div>
     </section>
+    <section id="tab-company" class="tabpane hidden">
+      <div class="card"><h2 style="font-size:17px">কোম্পানির Profile</h2>
+        <p class="muted">এই তথ্য Dashboard header ও রশিদে দেখানো হবে। শুধু Admin পরিবর্তন করতে পারবেন।</p>
+        <form id="companyForm"><div class="formgrid">
+          <div><label>কোম্পানির নাম *</label><input id="coName" required></div>
+          <div><label>মোবাইল নম্বর</label><input id="coPhone" inputmode="tel"></div>
+          <div><label>ইমেইল</label><input id="coEmail" type="email"></div>
+          <div class="full"><label>ঠিকানা</label><textarea id="coAddress" rows="2"></textarea></div>
+          <div class="full"><label>Logo (PNG/JPG/WebP, সর্বোচ্চ 300 KB)</label><input id="coLogoFile" type="file" accept="image/png,image/jpeg,image/webp"><div id="coLogoPreview" class="muted"></div></div>
+        </div><div class="row" style="margin-top:12px"><button type="submit">Profile সংরক্ষণ</button><button id="coLogoDelete" type="button" class="danger secondary">Logo মুছুন</button><button id="coReset" type="button" class="danger">Profile Reset</button></div></form><p id="companyMsg" class="muted"></p>
+      </div>
+    </section>
   </section>
-  <div class="foot">S A Communication • প্রথম সংস্করণ • হিসাব নিশ্চিত করার আগে পেমেন্ট যাচাই করুন</div>
+  <div class="foot">S A Communication • Admin ও Staff Panel • হিসাব নিশ্চিত করার আগে পেমেন্ট যাচাই করুন</div>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
@@ -89,7 +101,7 @@ const firebaseConfig = {
   messagingSenderId: "1054182224081",
   appId: "1:1054182224081:web:f2e372e31acccb25d4d5f0"
 };
-let app, auth, db, currentUser=null, currentRole="staff", customers=[], invoices=[], payments=[], userProfile=null;
+let app, auth, db, currentUser=null, currentRole="staff", customers=[], invoices=[], payments=[], userProfile=null, companyProfile={name:"S A Communication",address:"",phone:"",email:"",logo:""};
 const $ = id => document.getElementById(id);
 const bnDate = v => { if(!v)return "—"; try{return new Date(v+"T00:00:00").toLocaleDateString("bn-BD")}catch{return v} };
 const money = n => (Number(n)||0).toLocaleString("en-US");
@@ -98,16 +110,29 @@ const today = () => {const d=new Date();return `${d.getFullYear()}-${String(d.ge
 const setMsg=(id,msg,cls="muted")=>{const e=$(id);e.className=cls;e.textContent=msg};
 function configured(){return firebaseConfig.apiKey!=="PASTE_API_KEY_HERE" && firebaseConfig.projectId!=="PASTE_PROJECT_ID_HERE"}
 function showLogin(){ $("loginView").classList.remove("hidden");$("appView").classList.add("hidden") }
-function showApp(){ $("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("who").textContent=currentUser.email||"ব্যবহারকারী";$("roleLabel").textContent="ভূমিকা: "+(currentRole==="admin"?"Admin":"কর্মচারী");$("usersTab").classList.toggle("hidden",currentRole!=="admin"); }
+function showApp(){
+  $("loginView").classList.add("hidden");$("appView").classList.remove("hidden");
+  $("who").textContent=userProfile?.name||currentUser.email||"ব্যবহারকারী";
+  $("roleLabel").textContent="প্যানেল: "+(currentRole==="admin"?"Admin Panel":"Staff Panel");
+  document.querySelectorAll(".admin-only").forEach(el=>el.classList.toggle("hidden",currentRole!=="admin"));
+  document.querySelector("header h1").textContent=companyProfile.name||"S A Communication";
+  const sub=document.querySelector("header p");
+  sub.textContent=[companyProfile.address,companyProfile.phone,companyProfile.email].filter(Boolean).join(" • ")||"ISP Bill Monitoring System";
+}
 function monthAdd(date, months){const d=new Date(date+"T12:00:00");const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+months);const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,last));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
 function monthBounds(month){const [y,m]=month.split("-").map(Number);return {start:`${month}-01`,end:`${y}-${String(m).padStart(2,"0")}-${String(new Date(y,m,0).getDate()).padStart(2,"0")}`}}
 async function loadData(){
-  const [cs,is,ps,us]=await Promise.all([
+  const [cs,is,ps,us,co]=await Promise.all([
     getDocs(collection(db,"customers")),getDocs(collection(db,"invoices")),getDocs(collection(db,"payments")),
-    getDoc(doc(db,"users",currentUser.uid))
+    getDoc(doc(db,"users",currentUser.uid)),getDoc(doc(db,"settings","company"))
   ]);
   customers=cs.docs.map(d=>({id:d.id,...d.data()})); invoices=is.docs.map(d=>({id:d.id,...d.data()})); payments=ps.docs.map(d=>({id:d.id,...d.data()}));
-  userProfile=us.exists()?us.data():null; currentRole=userProfile?.role||"staff";
+  userProfile=us.exists()?us.data():null; currentRole=userProfile?.role||"";
+  companyProfile=co.exists()?{...companyProfile,...co.data()}:{...companyProfile};
+  if(currentRole!=="admin"&&currentRole!=="staff")throw new Error("আপনার role admin বা staff হতে হবে।");
+  $("coName").value=companyProfile.name||"S A Communication";$("coAddress").value=companyProfile.address||"";
+  $("coPhone").value=companyProfile.phone||"";$("coEmail").value=companyProfile.email||"";
+  $("coLogoPreview").innerHTML=companyProfile.logo?`<img alt="Company Logo" src="${companyProfile.logo}" style="max-width:100px;max-height:100px;object-fit:contain">`:"Logo দেওয়া নেই";
   showApp(); renderAll();
 }
 function renderAll(){renderStats();renderCustomers();renderInvoices();renderPayments();populateInvoiceSelect()}
@@ -137,7 +162,7 @@ function renderPayments(){
   document.querySelectorAll("[data-receipt]").forEach(b=>b.onclick=()=>showReceipt(payments.find(p=>p.id===b.dataset.receipt)));
 }
 function populateInvoiceSelect(){const due=invoices.filter(i=>Number(i.amount||0)>Number(i.paidAmount||0));$("pInvoice").innerHTML='<option value="">বিল নির্বাচন করুন</option>'+due.map(i=>{const c=customers.find(x=>x.id===i.customerId)||{};return `<option value="${i.id}">${esc(c.name||"অজানা")} • ${esc(i.month||"")} • বাকি ৳${money(i.amount-i.paidAmount)}</option>`}).join("")}
-function showReceipt(p){if(!p)return;const c=customers.find(x=>x.id===p.customerId)||{};const inv=invoices.find(x=>x.id===p.invoiceId)||{};$("receiptArea").classList.remove("hidden");$("receiptArea").innerHTML=`<div class="receipt" id="printReceipt"><h2>S A Communication</h2><p style="text-align:center">ইন্টারনেট বিলের রশিদ</p><hr><p><b>রশিদ নং:</b> ${esc(p.receiptNo||p.id)}<br><b>তারিখ:</b> ${bnDate(p.paidAt)}<br><b>গ্রাহক:</b> ${esc(c.name||"")}<br><b>মোবাইল:</b> ${esc(c.phone||"")}<br><b>গ্রাহক ID:</b> ${esc(c.code||"")}<br><b>বিলের মাস:</b> ${esc(inv.month||"")}</p><hr><h3>পরিশোধ: ৳${money(p.amount)}</h3><p>মাধ্যম: ${esc(p.method||"")}<br>রেফারেন্স: ${esc(p.reference||"—")}<br>গ্রহণকারী: ${esc(p.receivedByEmail||"")}</p><p style="text-align:center">ধন্যবাদ — S A Communication</p></div><div class="row"><button id="printBtn">রশিদ প্রিন্ট / PDF</button><button class="secondary" id="hideReceipt">বন্ধ করুন</button></div>`;$("printBtn").onclick=()=>{const content=$("printReceipt").outerHTML;const w=window.open("","_blank");if(!w){alert("প্রিন্ট পপ-আপ বন্ধ আছে। ব্রাউজারে পপ-আপ অনুমতি দিন।");return}w.document.write(`<html lang="bn"><head><meta charset="utf-8"><title>রশিদ</title><style>body{font-family:Arial,sans-serif;padding:20px}.receipt{max-width:480px;margin:auto;border:1px dashed #888;padding:20px}</style></head><body>${content}<script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()};$("hideReceipt").onclick=()=>$("receiptArea").classList.add("hidden");$("receiptArea").scrollIntoView({behavior:"smooth"})}
+function showReceipt(p){if(!p)return;const c=customers.find(x=>x.id===p.customerId)||{};const inv=invoices.find(x=>x.id===p.invoiceId)||{};$("receiptArea").classList.remove("hidden");$("receiptArea").innerHTML=`<div class="receipt" id="printReceipt"><h2>${esc(companyProfile.name||"S A Communication")}</h2><p style="text-align:center">${esc(companyProfile.address||"")}<br>${esc(companyProfile.phone||"")} ${esc(companyProfile.email||"")}</p><p style="text-align:center">ইন্টারনেট বিলের রশিদ</p><hr><p><b>রশিদ নং:</b> ${esc(p.receiptNo||p.id)}<br><b>তারিখ:</b> ${bnDate(p.paidAt)}<br><b>গ্রাহক:</b> ${esc(c.name||"")}<br><b>মোবাইল:</b> ${esc(c.phone||"")}<br><b>গ্রাহক ID:</b> ${esc(c.code||"")}<br><b>বিলের মাস:</b> ${esc(inv.month||"")}</p><hr><h3>পরিশোধ: ৳${money(p.amount)}</h3><p>মাধ্যম: ${esc(p.method||"")}<br>রেফারেন্স: ${esc(p.reference||"—")}<br>গ্রহণকারী: ${esc(p.receivedByEmail||"")}</p><p style="text-align:center">ধন্যবাদ — ${esc(companyProfile.name||"S A Communication")}</p></div><div class="row"><button id="printBtn">রশিদ প্রিন্ট / PDF</button><button class="secondary" id="hideReceipt">বন্ধ করুন</button></div>`;$("printBtn").onclick=()=>{const content=$("printReceipt").outerHTML;const w=window.open("","_blank");if(!w){alert("প্রিন্ট পপ-আপ বন্ধ আছে। ব্রাউজারে পপ-আপ অনুমতি দিন।");return}w.document.write(`<html lang="bn"><head><meta charset="utf-8"><title>রশিদ</title><style>body{font-family:Arial,sans-serif;padding:20px}.receipt{max-width:480px;margin:auto;border:1px dashed #888;padding:20px}</style></head><body>${content}<script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()};$("hideReceipt").onclick=()=>$("receiptArea").classList.add("hidden");$("receiptArea").scrollIntoView({behavior:"smooth"})}
 function clearCustomerForm(){ $("customerForm").reset();$("customerId").value="";$("customerFormTitle").textContent="নতুন গ্রাহক যোগ";$("cStart").value=today() }
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();if(!configured()){setMsg("loginMsg","প্রথমে index.html ফাইলে Firebase config বসাতে হবে। README নির্দেশিকা দেখুন।","error");return}try{await signInWithEmailAndPassword(auth,$("loginEmail").value.trim(),$("loginPassword").value);setMsg("loginMsg","লগইন সফল","success")}catch(err){setMsg("loginMsg","লগইন হয়নি: "+err.message,"error")}});
 $("forgotBtn").onclick=async()=>{if(!configured())return setMsg("loginMsg","Firebase config আগে বসান।","error");const email=$("loginEmail").value.trim();if(!email)return setMsg("loginMsg","আগে Email লিখুন।","error");try{await sendPasswordResetEmail(auth,email);setMsg("loginMsg","পাসওয়ার্ড রিসেট ইমেইল পাঠানো হয়েছে।","success")}catch(e){setMsg("loginMsg",e.message,"error")}};
@@ -147,10 +172,30 @@ $("cancelCustomer").onclick=clearCustomerForm;
 $("customerSearch").oninput=renderCustomers;$("invoiceSearch").oninput=renderInvoices;
 $("generateInvoices").onclick=async()=>{const month=$("invoiceMonth").value;if(!month)return setMsg("invoiceMsg","বিলের মাস নির্বাচন করুন।","error");try{const {start,end}=monthBounds(month);let created=0,skipped=0;for(const c of customers.filter(x=>x.status==="active"&&x.startDate&&x.startDate<=end)){const periodStart=c.startDate>start?c.startDate:start;if(periodStart>end)continue;const already=invoices.some(i=>i.customerId===c.id&&i.month===month);if(already){skipped++;continue}const dueDate=monthAdd(c.startDate,Math.max(0,(Number(month.slice(0,4))-Number(c.startDate.slice(0,4)))*12+Number(month.slice(5,7))-Number(c.startDate.slice(5,7))));const validDue=dueDate>=start?dueDate:end;const docData={customerId:c.id,month,periodStart:monthAdd(c.startDate,Math.max(0,(Number(month.slice(0,4))-Number(c.startDate.slice(0,4)))*12+Number(month.slice(5,7))-Number(c.startDate.slice(5,7)))),periodEnd:(()=>{const next=monthAdd(c.startDate,Math.max(0,(Number(month.slice(0,4))-Number(c.startDate.slice(0,4)))*12+Number(month.slice(5,7))-Number(c.startDate.slice(5,7))+1));const d=new Date(next+"T12:00:00");d.setDate(d.getDate()-1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`})(),dueDate:validDue,amount:Number(c.monthlyAmount||0),paidAmount:0,createdAt:serverTimestamp(),createdBy:currentUser.uid};docData.invoiceNo="INV-"+month.replace("-","")+"-"+c.id.slice(0,5).toUpperCase();await addDoc(collection(db,"invoices"),docData);created++}await loadData();setMsg("invoiceMsg",`নতুন বিল ${created}টি তৈরি হয়েছে; আগে ছিল ${skipped}টি।`,"success")}catch(err){setMsg("invoiceMsg","বিল তৈরি হয়নি: "+err.message,"error")}};
 $("paymentForm").addEventListener("submit",async e=>{e.preventDefault();try{const iid=$("pInvoice").value;const inv=invoices.find(i=>i.id===iid);if(!inv)throw new Error("একটি বিল নির্বাচন করুন");const amount=Number($("pAmount").value);const due=Math.max(0,Number(inv.amount||0)-Number(inv.paidAmount||0));if(amount<=0||amount>due)throw new Error("পরিশোধের পরিমাণ বকেয়ার চেয়ে বেশি বা শূন্য হতে পারবে না");const c=customers.find(x=>x.id===inv.customerId)||{};const payData={invoiceId:iid,customerId:inv.customerId,amount,method:$("pMethod").value,reference:$("pReference").value.trim(),paidAt:today(),receivedBy:currentUser.uid,receivedByEmail:currentUser.email||"",createdAt:serverTimestamp()};const payRef=await addDoc(collection(db,"payments"),payData);const receiptNo="SAC-"+today().replaceAll("-","")+"-"+payRef.id.slice(-6).toUpperCase();await updateDoc(doc(db,"payments",payRef.id),{receiptNo});await updateDoc(doc(db,"invoices",iid),{paidAmount:Number(inv.paidAmount||0)+amount,updatedAt:serverTimestamp()});await loadData();$("paymentForm").reset();setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়েছে। রশিদ তৈরি হয়েছে।","success");showReceipt({...payData,id:payRef.id,receiptNo});}catch(err){setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়নি: "+err.message,"error")}});
+$("companyForm").addEventListener("submit",async e=>{
+  e.preventDefault();if(currentRole!=="admin")return setMsg("companyMsg","শুধু Admin পরিবর্তন করতে পারবেন।","error");
+  try{
+    let logo=companyProfile.logo||"";const file=$("coLogoFile").files?.[0];
+    if(file){
+      if(file.size>300*1024)throw new Error("Logo ফাইল 300 KB-এর মধ্যে দিন।");
+      logo=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)});
+    }
+    companyProfile={name:$("coName").value.trim(),address:$("coAddress").value.trim(),phone:$("coPhone").value.trim(),email:$("coEmail").value.trim(),logo};
+    await setDoc(doc(db,"settings","company"),{...companyProfile,updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});
+    showApp();setMsg("companyMsg","কোম্পানির Profile সংরক্ষণ হয়েছে।","success");
+  }catch(err){setMsg("companyMsg","সংরক্ষণ হয়নি: "+err.message,"error")}
+});
+$("coLogoDelete").onclick=async()=>{if(currentRole!=="admin")return;if(!confirm("কোম্পানির Logo মুছবেন?"))return;try{companyProfile.logo="";await setDoc(doc(db,"settings","company"),{logo:"",updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});$("coLogoPreview").textContent="Logo দেওয়া নেই";showApp();setMsg("companyMsg","Logo মুছে ফেলা হয়েছে।","success")}catch(err){setMsg("companyMsg",err.message,"error")}};
+$("coReset").onclick=async()=>{if(currentRole!=="admin")return;if(!confirm("কোম্পানির Profile ডিফল্টে ফেরাবেন? গ্রাহক/বিল/পেমেন্ট মুছবে না।"))return;try{companyProfile={name:"S A Communication",address:"",phone:"",email:"",logo:""};await setDoc(doc(db,"settings","company"),{...companyProfile,updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});$("coName").value=companyProfile.name;$("coAddress").value="";$("coPhone").value="";$("coEmail").value="";$("coLogoPreview").textContent="Logo দেওয়া নেই";showApp();setMsg("companyMsg","Profile Reset হয়েছে।","success")}catch(err){setMsg("companyMsg",err.message,"error")}};
 $("roleForm").addEventListener("submit",async e=>{e.preventDefault();if(currentRole!=="admin")return setMsg("userMsg","শুধু Admin ভূমিকা পরিবর্তন করতে পারবেন।","error");try{const uid=$("uUid").value.trim();await setDoc(doc(db,"users",uid),{uid,name:$("uName").value.trim(),role:$("uRole").value,updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});setMsg("userMsg","ভূমিকা সংরক্ষণ হয়েছে।","success")}catch(err){setMsg("userMsg","সংরক্ষণ হয়নি: "+err.message,"error")}});
 $("runReport").onclick=()=>{const start=$("rStart").value||"0000-01-01",end=$("rEnd").value||"9999-12-31";const ps=payments.filter(p=>p.paidAt>=start&&p.paidAt<=end);const total=ps.reduce((s,p)=>s+Number(p.amount||0),0);const due=invoices.reduce((s,i)=>s+Math.max(0,Number(i.amount||0)-Number(i.paidAmount||0)),0);$("reportResult").innerHTML=`<p><b>সময়ের মধ্যে পেমেন্ট:</b> ${ps.length}টি</p><p><b>মোট আদায়:</b> ৳${money(total)}</p><p><b>বর্তমান মোট বকেয়া:</b> ৳${money(due)}</p><button id="exportCsv" class="secondary">পেমেন্ট CSV ডাউনলোড</button>`;$("exportCsv").onclick=()=>{const lines=[["Receipt","Date","Customer","Phone","Amount","Method"],...ps.map(p=>{const c=customers.find(x=>x.id===p.customerId)||{};return[p.receiptNo,p.paidAt,c.name,c.phone,p.amount,p.method]})];const csv="\uFEFF"+lines.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="sa-communication-payments.csv";a.click();URL.revokeObjectURL(a.href)}};
-document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabpane").forEach(p=>p.classList.add("hidden"));$("tab-"+b.dataset.tab).classList.remove("hidden");document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("secondary",x!==b))});
-if(configured()){app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);onAuthStateChanged(auth,async user=>{currentUser=user;if(!user){showLogin();return}try{await loadData();if(!userProfile){setMsg("globalMsg","আপনার users প্রোফাইল/ভূমিকা নেই। Firebase Console-এ users collection-এ UID অনুযায়ী role=admin/staff ডকুমেন্ট তৈরি করুন।","error");currentRole="staff";showApp()}}catch(e){showApp();setMsg("globalMsg","ডেটা লোড হয়নি: "+e.message+"। Firestore Rules ও users role পরীক্ষা করুন।","error")}})}else{showLogin();setMsg("loginMsg","Firebase config এখনো বসানো হয়নি। README দেখুন।","error")}
+document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{
+  if(b.classList.contains("admin-only")&&currentRole!=="admin")return;
+  document.querySelectorAll(".tabpane").forEach(p=>p.classList.add("hidden"));
+  $("tab-"+b.dataset.tab).classList.remove("hidden");
+  document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("secondary",x!==b));
+});
+if(configured()){app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);onAuthStateChanged(auth,async user=>{currentUser=user;if(!user){showLogin();return}try{await loadData();if(!userProfile||!["admin","staff"].includes(userProfile.role)){await signOut(auth);showLogin();setMsg("loginMsg","এই অ্যাকাউন্টের users/{UID} প্রোফাইলে role=admin বা role=staff সেট করা নেই। Admin-কে দিয়ে সেটআপ করান।","error")}}catch(e){showApp();setMsg("globalMsg","ডেটা লোড হয়নি: "+e.message+"। Firestore Rules ও users role পরীক্ষা করুন।","error")}})}else{showLogin();setMsg("loginMsg","Firebase config এখনো বসানো হয়নি। README দেখুন।","error")}
 $("cStart").value=today();$("invoiceMonth").value=today().slice(0,7);$("rStart").value=today().slice(0,7)+"-01";$("rEnd").value=today();
 </script>
 </body></html>
