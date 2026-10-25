@@ -55,14 +55,13 @@
     </section>
     <section id="tab-payments" class="tabpane hidden">
       <div class="card"><h2 style="font-size:17px">পেমেন্ট গ্রহণ</h2><form id="paymentForm"><div class="formgrid">
-        <div class="full"><label>যে গ্রাহক বিল পরিশোধ করবেন, তার ID লিখুন</label><input id="pCustomerIdSearch" type="text" placeholder="গ্রাহকের ID লিখুন (যেমন SAC-12345678)" autocomplete="off"><small class="muted">ID লিখলে শুধু ওই গ্রাহকের বকেয়া বিলগুলো দেখাবে।</small></div>
-        <div class="full"><label>বিল নির্বাচন *</label><select id="pInvoice" required></select></div>
-        <div><label>সংযোগ তারিখ</label><input id="pConnectionDate" type="date" readonly><small class="muted">গ্রাহকের সংযোগ শুরুর তারিখ</small></div>
-        <div><label>পেমেন্ট তারিখ *</label><input id="pPaymentDate" type="date" required></div>
-        <div><label>পরিশোধের পরিমাণ (৳) *</label><input id="pAmount" type="number" min="1" step="1" required></div>
-        <div><label>পেমেন্ট মাধ্যম</label><select id="pMethod"><option>Cash</option><option>bKash</option><option>Nagad</option><option>Bank</option><option>Other</option></select></div>
-        <div><label>রেফারেন্স (ঐচ্ছিক)</label><input id="pReference"></div>
-      </div><button style="margin-top:12px" type="submit">পেমেন্ট নিশ্চিত ও রশিদ তৈরি</button></form><p id="paymentMsg" class="muted"></p></div>
+        <div><label>১. গ্রাহকের নাম *</label><input id="pCustomerName" required placeholder="গ্রাহকের নাম লিখুন"></div>
+        <div><label>২. গ্রাহক ID *</label><input id="pCustomerIdSearch" required type="text" placeholder="গ্রাহক ID লিখুন" autocomplete="off"></div>
+        <div><label>৩. মাস নির্বাচন *</label><select id="pMonth" required><option value="">মাস নির্বাচন করুন</option></select></div>
+        <div><label>৪. পরিশোধের তারিখ *</label><input id="pPaymentDate" type="date" required></div>
+        <div><label>৫. পেমেন্ট মাধ্যম *</label><select id="pMethod" required><option value="">মাধ্যম নির্বাচন করুন</option><option value="নগদ">নগদ</option><option value="বিকাশ">বিকাশ</option><option value="নগদ (Nagad)">নগদ (Nagad)</option><option value="ব্যাংক">ব্যাংক</option><option value="অন্যান্য">অন্যান্য</option></select></div>
+        <select id="pInvoice" class="hidden" aria-hidden="true" tabindex="-1"><option value="">বিল নির্বাচন করুন</option></select>
+      </div><p class="muted">গ্রাহক ও মাস অনুযায়ী বিল মিলিয়ে বকেয়া টাকা স্বয়ংক্রিয়ভাবে হিসাব হবে।</p><button style="margin-top:12px" type="submit">পেমেন্ট সংরক্ষণ ও রশিদ তৈরি</button></form><p id="paymentMsg" class="muted"></p></div>
       <div class="card"><h2 style="font-size:17px">সাম্প্রতিক পেমেন্ট</h2><div class="tablewrap"><table><thead><tr><th>রশিদ</th><th>তারিখ</th><th>গ্রাহক</th><th>পরিমাণ</th><th>মাধ্যম</th><th>রশিদ</th></tr></thead><tbody id="paymentsTable"></tbody></table></div></div>
       <div id="receiptArea" class="hidden card"></div>
     </section>
@@ -151,21 +150,23 @@ function renderPayments(){
   document.querySelectorAll("[data-receipt]").forEach(b=>b.onclick=()=>showReceipt(payments.find(p=>p.id===b.dataset.receipt)));
 }
 function populateInvoiceSelect(){
-  const filter=($("pCustomerIdSearch")?.value||"").trim().toLowerCase();
-  const due=invoices.filter(i=>Number(i.amount||0)>Number(i.paidAmount||0));
-  const matches=due.filter(i=>{
-    const c=customers.find(x=>x.id===i.customerId)||{};
-    const code=String(c.code||c.id||"").toLowerCase();
-    return !filter || code.includes(filter);
-  });
-  const previous=$("pInvoice").value;
-  $("pInvoice").innerHTML='<option value="">বিল নির্বাচন করুন</option>'+matches.map(i=>{
-    const c=customers.find(x=>x.id===i.customerId)||{};
-    return `<option value="${i.id}">${esc(c.code||c.id||"")} • ${esc(c.name||"অজানা")} • ${esc(i.month||"")} • বাকি ৳${money(Number(i.amount||0)-Number(i.paidAmount||0))}</option>`;
-  }).join("");
-  if(matches.some(i=>i.id===previous)) $("pInvoice").value=previous;
-  if(filter && !matches.length) setMsg("paymentMsg","এই ID-এর কোনো বকেয়া বিল পাওয়া যায়নি।","error");
-  else if(filter) setMsg("paymentMsg",`এই ID-এর ${matches.length}টি বকেয়া বিল পাওয়া গেছে।`,"muted");
+  const code=($("pCustomerIdSearch").value||"").trim().toLowerCase();
+  const name=($("pCustomerName").value||"").trim().toLowerCase();
+  const month=$("pMonth").value;
+  const c=customers.find(x=>code && String(x.code||x.id||"").trim().toLowerCase()===code) || customers.find(x=>name && String(x.name||"").trim().toLowerCase()===name);
+  if(c){$("pCustomerName").value=c.name||""; if(!code) $("pCustomerIdSearch").value=c.code||c.id||"";}
+  const customer=c || null;
+  const matches=customer && month ? invoices.filter(i=>i.customerId===customer.id && i.month===month && Number(i.amount||0)>Number(i.paidAmount||0)) : [];
+  $("pInvoice").innerHTML='<option value="">বিল নির্বাচন করুন</option>'+matches.map(i=>`<option value="${i.id}">${esc(i.month||"")}</option>`).join("");
+  if(matches.length===1){$("pInvoice").value=matches[0].id;}
+  if(code && !customer){setMsg("paymentMsg","এই ID-এর গ্রাহক পাওয়া যায়নি। সঠিক ID লিখুন।","error");return;}
+  if(customer && month && !matches.length){setMsg("paymentMsg","এই গ্রাহকের নির্বাচিত মাসের বকেয়া বিল পাওয়া যায়নি। আগে ওই মাসের বিল তৈরি করুন অথবা বিলের অবস্থা পরীক্ষা করুন।","error");return;}
+  if(matches.length) setMsg("paymentMsg",`বিল পাওয়া গেছে। পরিশোধযোগ্য টাকা: ৳${money(Math.max(0,Number(matches[0].amount||0)-Number(matches[0].paidAmount||0)))}`,"muted");
+}
+function setupPaymentMonths(){
+ const names=["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"];
+ const year=new Date().getFullYear();
+ $("pMonth").innerHTML='<option value="">মাস নির্বাচন করুন</option>'+names.map((n,i)=>`<option value="${year}-${String(i+1).padStart(2,"0")}">${n} ${year}</option>`).join("");
 }
 function showReceipt(p){if(!p)return;const c=customers.find(x=>x.id===p.customerId)||{};const inv=invoices.find(x=>x.id===p.invoiceId)||{};$("receiptArea").classList.remove("hidden");$("receiptArea").innerHTML=`<div class="receipt" id="printReceipt"><h2>S A Communication</h2><p style="text-align:center">ইন্টারনেট বিলের রশিদ</p><hr><p><b>রশিদ নং:</b> ${esc(p.receiptNo||p.id)}<br><b>সংযোগ তারিখ:</b> ${bnDate(p.connectionDate||c.startDate)}<br><b>পেমেন্ট তারিখ:</b> ${bnDate(p.paidAt)}<br><b>গ্রাহক:</b> ${esc(c.name||"")}<br><b>মোবাইল:</b> ${esc(c.phone||"")}<br><b>গ্রাহক ID:</b> ${esc(c.code||"")}<br><b>বিলের মাস:</b> ${esc(inv.month||"")}</p><hr><h3>পরিশোধ: ৳${money(p.amount)}</h3><p>মাধ্যম: ${esc(p.method||"")}<br>রেফারেন্স: ${esc(p.reference||"—")}<br>গ্রহণকারী: ${esc(p.receivedByEmail||"")}</p><p style="text-align:center">ধন্যবাদ — S A Communication</p></div><div class="row"><button id="printBtn">রশিদ প্রিন্ট / PDF</button><button class="secondary" id="hideReceipt">বন্ধ করুন</button></div>`;$("printBtn").onclick=()=>{const content=$("printReceipt").outerHTML;const w=window.open("","_blank");if(!w){alert("প্রিন্ট পপ-আপ বন্ধ আছে। ব্রাউজারে পপ-আপ অনুমতি দিন।");return}w.document.write(`<html lang="bn"><head><meta charset="utf-8"><title>রশিদ</title><style>body{font-family:Arial,sans-serif;padding:20px}.receipt{max-width:480px;margin:auto;border:1px dashed #888;padding:20px}</style></head><body>${content}<script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()};$("hideReceipt").onclick=()=>$("receiptArea").classList.add("hidden");$("receiptArea").scrollIntoView({behavior:"smooth"})}
 function clearCustomerForm(){ $("customerForm").reset();$("customerId").value="";$("customerFormTitle").textContent="নতুন গ্রাহক যোগ";$("cStart").value=today() }
@@ -175,10 +176,28 @@ $("logoutBtn").onclick=()=>signOut(auth);
 $("customerForm").addEventListener("submit",async e=>{e.preventDefault();try{const id=$("customerId").value;const data={name:$("cName").value.trim(),phone:$("cPhone").value.trim(),address:$("cAddress").value.trim(),code:$("cCode").value.trim(),startDate:$("cStart").value,package:$("cPackage").value.trim(),monthlyAmount:Number($("cAmount").value),status:$("cStatus").value,pppoeUsername:$("cPppoe").value.trim(),note:$("cNote").value.trim(),updatedAt:serverTimestamp(),updatedBy:currentUser.uid};if(!data.code)data.code="SAC-"+Date.now().toString().slice(-8);if(id){await updateDoc(doc(db,"customers",id),data)}else{data.createdAt=serverTimestamp();data.createdBy=currentUser.uid;await addDoc(collection(db,"customers"),data)}clearCustomerForm();await loadData();setMsg("globalMsg","গ্রাহকের তথ্য সংরক্ষণ হয়েছে।","success")}catch(err){setMsg("globalMsg","সংরক্ষণ হয়নি: "+err.message,"error")}});
 $("cancelCustomer").onclick=clearCustomerForm;
 $("customerSearch").oninput=renderCustomers;$("invoiceSearch").oninput=renderInvoices;
-$("pCustomerIdSearch").oninput=()=>{populateInvoiceSelect();$("pAmount").value="";$("pConnectionDate").value="";};
-$("pInvoice").onchange=()=>{const inv=invoices.find(i=>i.id===$("pInvoice").value);if(inv){const c=customers.find(x=>x.id===inv.customerId)||{};$("pAmount").value=Math.max(0,Number(inv.amount||0)-Number(inv.paidAmount||0));$("pConnectionDate").value=c.startDate||"";}};
+$("pCustomerIdSearch").oninput=populateInvoiceSelect;
+$("pCustomerIdSearch").onchange=populateInvoiceSelect;
+$("pCustomerName").oninput=populateInvoiceSelect;
+$("pMonth").onchange=populateInvoiceSelect;
+$("pInvoice").onchange=()=>{};
 $("generateInvoices").onclick=async()=>{const month=$("invoiceMonth").value;if(!month)return setMsg("invoiceMsg","বিলের মাস নির্বাচন করুন।","error");try{const {start,end}=monthBounds(month);let created=0,skipped=0;for(const c of customers.filter(x=>x.status==="active"&&x.startDate&&x.startDate<=end)){const periodStart=c.startDate>start?c.startDate:start;if(periodStart>end)continue;const already=invoices.some(i=>i.customerId===c.id&&i.month===month);if(already){skipped++;continue}const dueDate=monthAdd(c.startDate,Math.max(0,(Number(month.slice(0,4))-Number(c.startDate.slice(0,4)))*12+Number(month.slice(5,7))-Number(c.startDate.slice(5,7))));const validDue=dueDate>=start?dueDate:end;const docData={customerId:c.id,month,periodStart:monthAdd(c.startDate,Math.max(0,(Number(month.slice(0,4))-Number(c.startDate.slice(0,4)))*12+Number(month.slice(5,7))-Number(c.startDate.slice(5,7)))),periodEnd:(()=>{const next=monthAdd(c.startDate,Math.max(0,(Number(month.slice(0,4))-Number(c.startDate.slice(0,4)))*12+Number(month.slice(5,7))-Number(c.startDate.slice(5,7))+1));const d=new Date(next+"T12:00:00");d.setDate(d.getDate()-1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`})(),dueDate:validDue,amount:Number(c.monthlyAmount||0),paidAmount:0,createdAt:serverTimestamp(),createdBy:currentUser.uid};docData.invoiceNo="INV-"+month.replace("-","")+"-"+c.id.slice(0,5).toUpperCase();await addDoc(collection(db,"invoices"),docData);created++}await loadData();setMsg("invoiceMsg",`নতুন বিল ${created}টি তৈরি হয়েছে; আগে ছিল ${skipped}টি।`,"success")}catch(err){setMsg("invoiceMsg","বিল তৈরি হয়নি: "+err.message,"error")}};
-$("paymentForm").addEventListener("submit",async e=>{e.preventDefault();try{const iid=$("pInvoice").value;const inv=invoices.find(i=>i.id===iid);if(!inv)throw new Error("একটি বিল নির্বাচন করুন");const amount=Number($("pAmount").value);const due=Math.max(0,Number(inv.amount||0)-Number(inv.paidAmount||0));if(amount<=0||amount>due)throw new Error("পরিশোধের পরিমাণ বকেয়ার চেয়ে বেশি বা শূন্য হতে পারবে না");const c=customers.find(x=>x.id===inv.customerId)||{};const paymentDate=$("pPaymentDate").value;if(!paymentDate)throw new Error("পেমেন্ট তারিখ নির্বাচন করুন");const payData={invoiceId:iid,customerId:inv.customerId,connectionDate:c.startDate||"",amount,method:$("pMethod").value,reference:$("pReference").value.trim(),paidAt:paymentDate,receivedBy:currentUser.uid,receivedByEmail:currentUser.email||"",createdAt:serverTimestamp()};const payRef=await addDoc(collection(db,"payments"),payData);const receiptNo="SAC-"+paymentDate.replaceAll("-","")+"-"+payRef.id.slice(-6).toUpperCase();await updateDoc(doc(db,"payments",payRef.id),{receiptNo});await updateDoc(doc(db,"invoices",iid),{paidAmount:Number(inv.paidAmount||0)+amount,updatedAt:serverTimestamp()});await loadData();$("paymentForm").reset();$("pPaymentDate").value=today();$("pConnectionDate").value="";populateInvoiceSelect();setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়েছে। রশিদ তৈরি হয়েছে।","success");showReceipt({...payData,id:payRef.id,receiptNo});}catch(err){setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়নি: "+err.message,"error")}});
+$("paymentForm").addEventListener("submit",async e=>{e.preventDefault();try{
+ const code=$("pCustomerIdSearch").value.trim().toLowerCase(), name=$("pCustomerName").value.trim().toLowerCase(), month=$("pMonth").value;
+ const c=customers.find(x=>String(x.code||x.id||"").trim().toLowerCase()===code) || customers.find(x=>String(x.name||"").trim().toLowerCase()===name);
+ if(!c) throw new Error("সঠিক গ্রাহকের নাম ও ID লিখুন");
+ if(String(c.name||"").trim().toLowerCase()!==name || String(c.code||c.id||"").trim().toLowerCase()!==code) throw new Error("গ্রাহকের নাম ও ID একই গ্রাহকের হতে হবে");
+ if(!month) throw new Error("মাস নির্বাচন করুন");
+ const inv=invoices.find(i=>i.customerId===c.id&&i.month===month&&Number(i.amount||0)>Number(i.paidAmount||0));
+ if(!inv) throw new Error("এই গ্রাহকের নির্বাচিত মাসের কোনো বকেয়া বিল নেই");
+ const amount=Math.max(0,Number(inv.amount||0)-Number(inv.paidAmount||0));
+ if(amount<=0) throw new Error("এই বিলের কোনো বকেয়া নেই");
+ const paymentDate=$("pPaymentDate").value;if(!paymentDate)throw new Error("পেমেন্ট তারিখ নির্বাচন করুন");
+ const payData={invoiceId:inv.id,customerId:c.id,connectionDate:c.startDate||"",amount,method:$("pMethod").value,reference:"",paidAt:paymentDate,receivedBy:currentUser.uid,receivedByEmail:currentUser.email||"",createdAt:serverTimestamp()};
+ const payRef=await addDoc(collection(db,"payments"),payData);const receiptNo="SAC-"+paymentDate.replaceAll("-","")+"-"+payRef.id.slice(-6).toUpperCase();
+ await updateDoc(doc(db,"payments",payRef.id),{receiptNo});await updateDoc(doc(db,"invoices",inv.id),{paidAmount:Number(inv.paidAmount||0)+amount,updatedAt:serverTimestamp()});
+ await loadData();$("paymentForm").reset();$("pPaymentDate").value=today();setupPaymentMonths();populateInvoiceSelect();setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়েছে। রশিদ তৈরি হয়েছে।","success");showReceipt({...payData,id:payRef.id,receiptNo});
+ }catch(err){setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়নি: "+err.message,"error")}});
 $("roleForm").addEventListener("submit",async e=>{e.preventDefault();if(currentRole!=="admin")return setMsg("userMsg","শুধু Admin ভূমিকা পরিবর্তন করতে পারবেন।","error");try{const uid=$("uUid").value.trim();await setDoc(doc(db,"users",uid),{uid,name:$("uName").value.trim(),role:$("uRole").value,updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});setMsg("userMsg","ভূমিকা সংরক্ষণ হয়েছে।","success")}catch(err){setMsg("userMsg","সংরক্ষণ হয়নি: "+err.message,"error")}});
 $("runReport").onclick=()=>{const start=$("rStart").value||"0000-01-01",end=$("rEnd").value||"9999-12-31";const ps=payments.filter(p=>p.paidAt>=start&&p.paidAt<=end);const total=ps.reduce((s,p)=>s+Number(p.amount||0),0);const due=invoices.reduce((s,i)=>s+Math.max(0,Number(i.amount||0)-Number(i.paidAmount||0)),0);$("reportResult").innerHTML=`<p><b>সময়ের মধ্যে পেমেন্ট:</b> ${ps.length}টি</p><p><b>মোট আদায়:</b> ৳${money(total)}</p><p><b>বর্তমান মোট বকেয়া:</b> ৳${money(due)}</p><button id="exportCsv" class="secondary">পেমেন্ট CSV ডাউনলোড</button>`;$("exportCsv").onclick=()=>{const lines=[["Receipt","Date","Customer","Phone","Amount","Method"],...ps.map(p=>{const c=customers.find(x=>x.id===p.customerId)||{};return[p.receiptNo,p.paidAt,c.name,c.phone,p.amount,p.method]})];const csv="\uFEFF"+lines.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="sa-communication-payments.csv";a.click();URL.revokeObjectURL(a.href)}};
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabpane").forEach(p=>p.classList.add("hidden"));$("tab-"+b.dataset.tab).classList.remove("hidden");document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("secondary",x!==b))});
