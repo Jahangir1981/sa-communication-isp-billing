@@ -112,7 +112,7 @@ async function loadData(){
   userProfile=us.exists()?us.data():null; currentRole=userProfile?.role||"staff";
   showApp(); renderAll();
 }
-function renderAll(){renderStats();renderCustomers();renderInvoices();renderPayments();populateInvoiceSelect()}
+function renderAll(){setupPaymentMonths();renderStats();renderCustomers();renderInvoices();renderPayments();populateInvoiceSelect()}
 function renderStats(){
   const now=today(), m=now.slice(0,7);
   $("statCustomers").textContent=customers.filter(c=>c.status!=="closed").length;
@@ -165,8 +165,14 @@ function populateInvoiceSelect(){
 }
 function setupPaymentMonths(){
  const names=["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"];
- const year=new Date().getFullYear();
- $("pMonth").innerHTML='<option value="">মাস নির্বাচন করুন</option>'+names.map((n,i)=>`<option value="${year}-${String(i+1).padStart(2,"0")}">${n} ${year}</option>`).join("");
+ const currentYear=new Date().getFullYear();
+ // Show all 12 months for the current year plus any year/month that already has an invoice.
+ const years=new Set([currentYear]);
+ invoices.forEach(inv=>{if(/^\d{4}-\d{2}$/.test(String(inv.month||"")))years.add(Number(inv.month.slice(0,4)));});
+ const selected=$("pMonth").value;
+ const options=[...years].sort((a,b)=>b-a).flatMap(year=>names.map((n,i)=>({value:`${year}-${String(i+1).padStart(2,"0")}`,label:`${n} ${year}`})));
+ $("pMonth").innerHTML='<option value="">মাস নির্বাচন করুন</option>'+options.map(o=>`<option value="${o.value}">${o.label}</option>`).join("");
+ if(options.some(o=>o.value===selected))$("pMonth").value=selected;
 }
 function showReceipt(p){if(!p)return;const c=customers.find(x=>x.id===p.customerId)||{};const inv=invoices.find(x=>x.id===p.invoiceId)||{};$("receiptArea").classList.remove("hidden");$("receiptArea").innerHTML=`<div class="receipt" id="printReceipt"><h2>S A Communication</h2><p style="text-align:center">ইন্টারনেট বিলের রশিদ</p><hr><p><b>রশিদ নং:</b> ${esc(p.receiptNo||p.id)}<br><b>সংযোগ তারিখ:</b> ${bnDate(p.connectionDate||c.startDate)}<br><b>পেমেন্ট তারিখ:</b> ${bnDate(p.paidAt)}<br><b>গ্রাহক:</b> ${esc(c.name||"")}<br><b>মোবাইল:</b> ${esc(c.phone||"")}<br><b>গ্রাহক ID:</b> ${esc(c.code||"")}<br><b>বিলের মাস:</b> ${esc(inv.month||"")}</p><hr><h3>পরিশোধ: ৳${money(p.amount)}</h3><p>মাধ্যম: ${esc(p.method||"")}<br>রেফারেন্স: ${esc(p.reference||"—")}<br>গ্রহণকারী: ${esc(p.receivedByEmail||"")}</p><p style="text-align:center">ধন্যবাদ — S A Communication</p></div><div class="row"><button id="printBtn">রশিদ প্রিন্ট / PDF</button><button class="secondary" id="hideReceipt">বন্ধ করুন</button></div>`;$("printBtn").onclick=()=>{const content=$("printReceipt").outerHTML;const w=window.open("","_blank");if(!w){alert("প্রিন্ট পপ-আপ বন্ধ আছে। ব্রাউজারে পপ-আপ অনুমতি দিন।");return}w.document.write(`<html lang="bn"><head><meta charset="utf-8"><title>রশিদ</title><style>body{font-family:Arial,sans-serif;padding:20px}.receipt{max-width:480px;margin:auto;border:1px dashed #888;padding:20px}</style></head><body>${content}<script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()};$("hideReceipt").onclick=()=>$("receiptArea").classList.add("hidden");$("receiptArea").scrollIntoView({behavior:"smooth"})}
 function clearCustomerForm(){ $("customerForm").reset();$("customerId").value="";$("customerFormTitle").textContent="নতুন গ্রাহক যোগ";$("cStart").value=today() }
@@ -202,6 +208,6 @@ $("roleForm").addEventListener("submit",async e=>{e.preventDefault();if(currentR
 $("runReport").onclick=()=>{const start=$("rStart").value||"0000-01-01",end=$("rEnd").value||"9999-12-31";const ps=payments.filter(p=>p.paidAt>=start&&p.paidAt<=end);const total=ps.reduce((s,p)=>s+Number(p.amount||0),0);const due=invoices.reduce((s,i)=>s+Math.max(0,Number(i.amount||0)-Number(i.paidAmount||0)),0);$("reportResult").innerHTML=`<p><b>সময়ের মধ্যে পেমেন্ট:</b> ${ps.length}টি</p><p><b>মোট আদায়:</b> ৳${money(total)}</p><p><b>বর্তমান মোট বকেয়া:</b> ৳${money(due)}</p><button id="exportCsv" class="secondary">পেমেন্ট CSV ডাউনলোড</button>`;$("exportCsv").onclick=()=>{const lines=[["Receipt","Date","Customer","Phone","Amount","Method"],...ps.map(p=>{const c=customers.find(x=>x.id===p.customerId)||{};return[p.receiptNo,p.paidAt,c.name,c.phone,p.amount,p.method]})];const csv="\uFEFF"+lines.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="sa-communication-payments.csv";a.click();URL.revokeObjectURL(a.href)}};
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabpane").forEach(p=>p.classList.add("hidden"));$("tab-"+b.dataset.tab).classList.remove("hidden");document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("secondary",x!==b))});
 if(configured()){app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);onAuthStateChanged(auth,async user=>{currentUser=user;if(!user){showLogin();return}try{await loadData();if(!userProfile){setMsg("globalMsg","আপনার users প্রোফাইল/ভূমিকা নেই। Firebase Console-এ users collection-এ UID অনুযায়ী role=admin/staff ডকুমেন্ট তৈরি করুন।","error");currentRole="staff";showApp()}}catch(e){showApp();setMsg("globalMsg","ডেটা লোড হয়নি: "+e.message+"। Firestore Rules ও users role পরীক্ষা করুন।","error")}})}else{showLogin();setMsg("loginMsg","Firebase config এখনো বসানো হয়নি। README দেখুন।","error")}
-$("cStart").value=today();$("pPaymentDate").value=today();$("invoiceMonth").value=today().slice(0,7);$("rStart").value=today().slice(0,7)+"-01";$("rEnd").value=today();
+$("cStart").value=today();setupPaymentMonths();$("pPaymentDate").value=today();$("invoiceMonth").value=today().slice(0,7);$("rStart").value=today().slice(0,7)+"-01";$("rEnd").value=today();
 </script>
 </body></html>
