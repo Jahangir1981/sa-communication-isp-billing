@@ -30,7 +30,7 @@
       <div class="stat"><small>মেয়াদ শেষ/বকেয়া</small><strong id="statOverdue">0</strong></div>
     </div>
     <nav class="tabs" style="margin-top:14px">
-      <button data-tab="customers">গ্রাহক</button><button data-tab="invoices" class="secondary">বিল</button><button data-tab="payments" class="secondary">পেমেন্ট/রশিদ</button><button data-tab="reports" class="secondary">রিপোর্ট</button><button data-tab="profile" class="secondary hidden" id="profileTab">প্রতিষ্ঠানের প্রোফাইল/লোগো</button><button data-tab="users" class="secondary" id="usersTab">ব্যবহারকারী</button>
+      <button data-tab="customers">গ্রাহক</button><button data-tab="invoices" class="secondary">বিল</button><button data-tab="payments" class="secondary">পেমেন্ট/রশিদ</button><button data-tab="reports" class="secondary">রিপোর্ট</button><button data-tab="profile" class="secondary hidden" id="profileTab">প্রতিষ্ঠানের প্রোফাইল/লোগো</button><button data-tab="backup" class="secondary hidden" id="backupTab">Backup / Restore</button><button data-tab="users" class="secondary" id="usersTab">ব্যবহারকারী</button>
     </nav>
     <section id="tab-customers" class="tabpane">
       <div class="card"><div class="sectionhead"><h2 id="customerFormTitle">নতুন গ্রাহক যোগ</h2></div>
@@ -79,6 +79,19 @@
         <div class="note">প্রোফাইল রিসেট করলে শুধু প্রতিষ্ঠানের নাম, ঠিকানা, ফোন, ইমেইল ও লোগো ডিফল্ট অবস্থায় ফিরবে। গ্রাহক, বিল, পেমেন্ট বা রশিদের হিসাব মুছবে না।</div>
       </div>
     </section>
+    <section id="tab-backup" class="tabpane hidden">
+      <div class="card"><h2 style="font-size:17px">সম্পূর্ণ Backup / Restore</h2>
+        <p class="muted">Admin এখান থেকে গ্রাহক, বিল, পেমেন্ট, রশিদ, ব্যবহারকারী-ভূমিকা, নোটিফিকেশন, সেটিংস ও অডিট লগের Firestore তথ্য JSON ফাইলে সংরক্ষণ করতে পারবেন।</p>
+        <div class="row"><button type="button" id="backupDownloadBtn">সম্পূর্ণ Backup ডাউনলোড</button></div>
+        <p id="backupMsg" class="muted" aria-live="polite"></p>
+        <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+        <h3 style="font-size:15px">Backup ফাইল থেকে Restore</h3>
+        <label for="restoreFile">JSON Backup ফাইল নির্বাচন করুন</label><input id="restoreFile" type="file" accept=".json,application/json">
+        <p class="note">নিরাপদ Merge: বর্তমানে থাকা একই ID-র ডকুমেন্ট পরিবর্তন বা মুছবে না। শুধু যেসব ডকুমেন্ট ID এখন নেই, সেগুলো যোগ হবে। Restore-এর আগে বর্তমান ডেটার Backup ডাউনলোড করুন। একই Firebase প্রজেক্টের Backup ফাইল ব্যবহার করুন।</p>
+        <button type="button" id="restoreBtn" class="danger">নতুন/অনুপস্থিত তথ্য Restore করুন</button>
+        <p class="muted">সীমাবদ্ধতা: Firebase Authentication-এর লগইন অ্যাকাউন্ট/পাসওয়ার্ড এবং Firestore Security Rules এই ফাইলে থাকে না; সেগুলো আলাদাভাবে Firebase Console-এ পরিচালিত হয়।</p>
+      </div>
+    </section>
     <section id="tab-users" class="tabpane hidden">
       <div class="card"><h2 style="font-size:17px">ব্যবহারকারীর ভূমিকা</h2><p class="muted">Firebase Authentication-এ কর্মচারীর অ্যাকাউন্ট আগে তৈরি করুন। এরপর তার সঠিক UID দিয়ে ভূমিকা সংরক্ষণ করুন। প্রথম Admin-কে Firestore Console-এ নিরাপদভাবে সেটআপ করতে হবে—নিচের নির্দেশিকা দেখুন।</p>
         <form id="roleForm"><label>ব্যবহারকারীর UID *</label><input id="uUid" required><label>নাম</label><input id="uName"><label>ভূমিকা</label><select id="uRole"><option value="staff">কর্মচারী (Staff)</option><option value="admin">Admin</option></select><button style="margin-top:12px">ভূমিকা সংরক্ষণ</button></form><p id="userMsg" class="muted"></p>
@@ -90,7 +103,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp, Timestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* 1) Replace every placeholder with values from Firebase Console > Project settings > Your apps.
    Never put a Firebase Admin SDK private key in this file. */
@@ -113,7 +126,7 @@ const today = () => {const d=new Date();return `${d.getFullYear()}-${String(d.ge
 const setMsg=(id,msg,cls="muted")=>{const e=$(id);e.className=cls;e.textContent=msg};
 function configured(){return firebaseConfig.apiKey!=="PASTE_API_KEY_HERE" && firebaseConfig.projectId!=="PASTE_PROJECT_ID_HERE"}
 function showLogin(){ $("loginView").classList.remove("hidden");$("appView").classList.add("hidden") }
-function showApp(){ $("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("who").textContent=currentUser.email||"ব্যবহারকারী";$("roleLabel").textContent="ভূমিকা: "+(currentRole==="admin"?"Admin":"কর্মচারী");$("usersTab").classList.toggle("hidden",currentRole!=="admin");$("profileTab").classList.toggle("hidden",currentRole!=="admin"); }
+function showApp(){ $("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("who").textContent=currentUser.email||"ব্যবহারকারী";$("roleLabel").textContent="ভূমিকা: "+(currentRole==="admin"?"Admin":"কর্মচারী");$("usersTab").classList.toggle("hidden",currentRole!=="admin");$("profileTab").classList.toggle("hidden",currentRole!=="admin");$("backupTab").classList.toggle("hidden",currentRole!=="admin"); }
 function renderCompanyProfile(){const name=companyProfile.name||"S A Communication";$("companyNameHeader").textContent=name;$("companyAddressHeader").textContent=companyProfile.address||"ISP Bill Monitoring System";const logo=$("headerLogo");if(companyProfile.logoData){logo.src=companyProfile.logoData;logo.style.display="block"}else{logo.removeAttribute("src");logo.style.display="none"}}
 function renderLogoPreview(data){const img=$("orgLogoPreview"),txt=$("noLogoText");if(data){img.src=data;img.classList.remove("hidden");txt.classList.add("hidden")}else{img.removeAttribute("src");img.classList.add("hidden");txt.classList.remove("hidden")}}
 function fillCompanyProfileForm(){ $("orgName").value=companyProfile.name||"S A Communication";$("orgAddress").value=companyProfile.address||"";$("orgPhone").value=companyProfile.phone||"";$("orgEmail").value=companyProfile.email||"";pendingLogoData=companyProfile.logoData||null;renderLogoPreview(pendingLogoData)}
@@ -226,6 +239,53 @@ $("orgLogoFile").addEventListener("change",async e=>{const f=e.target.files?.[0]
 $("companyProfileForm").addEventListener("submit",async e=>{e.preventDefault();if(currentRole!=="admin")return setMsg("profileMsg","শুধু Admin প্রোফাইল পরিবর্তন করতে পারবেন।","error");try{const next={name:$ ("orgName").value.trim(),address:$ ("orgAddress").value.trim(),phone:$ ("orgPhone").value.trim(),email:$ ("orgEmail").value.trim(),logoData:pendingLogoData||"",updatedAt:serverTimestamp(),updatedBy:currentUser.uid};if(!next.name)throw new Error("প্রতিষ্ঠানের নাম লিখুন");await setDoc(doc(db,"settings","companyProfile"),next,{merge:true});companyProfile={...next};renderCompanyProfile();fillCompanyProfileForm();setMsg("profileMsg","প্রতিষ্ঠানের প্রোফাইল ও লোগো সংরক্ষণ হয়েছে।","success")}catch(err){setMsg("profileMsg","সংরক্ষণ হয়নি: "+err.message+"। Firestore Rules-এ settings write Admin-এর জন্য অনুমোদিত কি না দেখুন।","error")}});
 $("removeLogoBtn").onclick=async()=>{if(currentRole!=="admin")return setMsg("profileMsg","শুধু Admin লোগো মুছতে পারবেন।","error");if(!confirm("প্রতিষ্ঠানের লোগো মুছবেন?"))return;try{const next={...companyProfile,logoData:"",updatedAt:serverTimestamp(),updatedBy:currentUser.uid};await setDoc(doc(db,"settings","companyProfile"),next,{merge:true});companyProfile=next;pendingLogoData=null;$("orgLogoFile").value="";renderCompanyProfile();renderLogoPreview(null);setMsg("profileMsg","লোগো মুছে ফেলা হয়েছে।","success")}catch(err){setMsg("profileMsg","লোগো মুছতে পারেনি: "+err.message,"error")}};
 $("resetProfileBtn").onclick=async()=>{if(currentRole!=="admin")return setMsg("profileMsg","শুধু Admin প্রোফাইল রিসেট করতে পারবেন।","error");if(!confirm("প্রতিষ্ঠানের প্রোফাইল ডিফল্টে ফিরবে। গ্রাহক, বিল ও পেমেন্ট মুছবে না। চালিয়ে যাবেন?"))return;try{companyProfile={name:"S A Communication",address:"ISP Bill Monitoring System",phone:"",email:"",logoData:"",updatedAt:serverTimestamp(),updatedBy:currentUser.uid};await setDoc(doc(db,"settings","companyProfile"),companyProfile);$("orgLogoFile").value="";renderCompanyProfile();fillCompanyProfileForm();setMsg("profileMsg","প্রোফাইল ডিফল্টে রিসেট হয়েছে। হিসাবের কোনো তথ্য মোছা হয়নি।","success")}catch(err){setMsg("profileMsg","রিসেট হয়নি: "+err.message,"error")}};
+const BACKUP_COLLECTIONS=["customers","invoices","payments","receipts","users","notifications","settings","auditLogs"];
+function backupEncode(value){
+  if(value && typeof value.toDate==="function" && Number.isFinite(value.seconds))return {__saBackupType:"Timestamp",seconds:value.seconds,nanoseconds:value.nanoseconds||0};
+  if(Array.isArray(value))return value.map(backupEncode);
+  if(value && typeof value==="object"){const out={};for(const [k,v] of Object.entries(value))out[k]=backupEncode(v);return out;}
+  return value;
+}
+function backupDecode(value){
+  if(Array.isArray(value))return value.map(backupDecode);
+  if(value && typeof value==="object"){
+    if(value.__saBackupType==="Timestamp" && Number.isFinite(value.seconds))return new Timestamp(value.seconds,Number(value.nanoseconds)||0);
+    const out={};for(const [k,v] of Object.entries(value))out[k]=backupDecode(v);return out;
+  }
+  return value;
+}
+function ensureBackupAdmin(){if(!currentUser || currentRole!=="admin")throw new Error("শুধু Admin Backup/Restore করতে পারবেন।");}
+$("backupDownloadBtn").addEventListener("click",async()=>{
+  try{
+    ensureBackupAdmin();const btn=$("backupDownloadBtn");btn.disabled=true;setMsg("backupMsg","সব কালেকশনের তথ্য সংগ্রহ করা হচ্ছে…","muted");
+    const collections={};let total=0;
+    for(const name of BACKUP_COLLECTIONS){const snap=await getDocs(collection(db,name));collections[name]=snap.docs.map(d=>({id:d.id,data:backupEncode(d.data())}));total+=snap.size;}
+    const payload={format:"sa-communication-isp-backup",version:1,projectId:firebaseConfig.projectId,createdAt:new Date().toISOString(),collections};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="SA-Communication-Backup-"+today()+".json";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+    setMsg("backupMsg",`Backup প্রস্তুত: ${total}টি ডকুমেন্ট। ডাউনলোড ফাইলটি নিরাপদ জায়গায় রাখুন।`,"success");
+  }catch(err){setMsg("backupMsg","Backup হয়নি: "+err.message,"error")}finally{$("backupDownloadBtn").disabled=false;}
+});
+$("restoreBtn").addEventListener("click",async()=>{
+  const file=$("restoreFile").files?.[0];
+  try{
+    ensureBackupAdmin();if(!file)throw new Error("আগে JSON Backup ফাইল নির্বাচন করুন।");
+    if(file.size>25*1024*1024)throw new Error("ফাইল 25 MB-এর বেশি। ছোট Backup ফাইল ব্যবহার করুন।");
+    const raw=await file.text();const payload=JSON.parse(raw);
+    if(payload?.format!=="sa-communication-isp-backup" || payload?.version!==1 || !payload.collections)throw new Error("এটি সমর্থিত S A Communication Backup ফাইল নয়।");
+    if(payload.projectId!==firebaseConfig.projectId)throw new Error("এই Backup অন্য Firebase প্রজেক্টের। ভুল প্রজেক্টে Restore বন্ধ করা হয়েছে।");
+    for(const name of BACKUP_COLLECTIONS){if(!Array.isArray(payload.collections[name]))throw new Error("Backup-এ "+name+" কালেকশনের তথ্য সঠিক নয়।");}
+    if(!confirm("Merge Restore চালাবেন? বর্তমান ডকুমেন্ট মুছবে বা পরিবর্তন করবে না। শুধু বর্তমানে অনুপস্থিত ডকুমেন্ট যোগ হবে। Restore-এর আগে বর্তমান ডেটার Backup নিয়েছেন কি?"))return;
+    const btn=$("restoreBtn");btn.disabled=true;setMsg("backupMsg","বর্তমান ডেটার সঙ্গে মিলিয়ে নতুন ডকুমেন্ট যোগ করা হচ্ছে…","muted");
+    let added=0,skipped=0;
+    for(const name of BACKUP_COLLECTIONS){
+      const records=payload.collections[name];if(!records.length)continue;
+      const currentSnap=await getDocs(collection(db,name));const existing=new Set(currentSnap.docs.map(d=>d.id));
+      const missing=[];for(const rec of records){if(!rec || typeof rec.id!=="string" || !rec.id || !rec.data || typeof rec.data!=="object")throw new Error(name+" কালেকশনে ভুল রেকর্ড আছে।");if(existing.has(rec.id)){skipped++;continue;}missing.push(rec);existing.add(rec.id);}
+      for(let i=0;i<missing.length;i+=400){const batch=writeBatch(db);const part=missing.slice(i,i+400);for(const rec of part)batch.set(doc(db,name,rec.id),backupDecode(rec.data));await batch.commit();added+=part.length;}
+    }
+    await loadData();setMsg("backupMsg",`Restore সম্পন্ন। নতুন যোগ হয়েছে ${added}টি ডকুমেন্ট; একই ID থাকায় ${skipped}টি বাদ দেওয়া হয়েছে। বর্তমান ডকুমেন্ট ওভাররাইট করা হয়নি।`,"success");
+  }catch(err){setMsg("backupMsg","Restore সম্পূর্ণ হয়নি: "+err.message+"। কিছু ডকুমেন্ট যোগ হয়ে থাকলে পুনরায় চালালে একই ID-র ডকুমেন্ট বাদ যাবে। Firestore Rules ও Admin অনুমতি পরীক্ষা করুন।","error")}finally{$("restoreBtn").disabled=false;}
+});
 $("roleForm").addEventListener("submit",async e=>{e.preventDefault();if(currentRole!=="admin")return setMsg("userMsg","শুধু Admin ভূমিকা পরিবর্তন করতে পারবেন।","error");try{const uid=$("uUid").value.trim();await setDoc(doc(db,"users",uid),{uid,name:$("uName").value.trim(),role:$("uRole").value,updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});setMsg("userMsg","ভূমিকা সংরক্ষণ হয়েছে।","success")}catch(err){setMsg("userMsg","সংরক্ষণ হয়নি: "+err.message,"error")}});
 $("runReport").onclick=()=>{const start=$("rStart").value||"0000-01-01",end=$("rEnd").value||"9999-12-31";const ps=payments.filter(p=>p.paidAt>=start&&p.paidAt<=end);const total=ps.reduce((s,p)=>s+Number(p.amount||0),0);const due=invoices.reduce((s,i)=>s+Math.max(0,Number(i.amount||0)-Number(i.paidAmount||0)),0);$("reportResult").innerHTML=`<p><b>সময়ের মধ্যে পেমেন্ট:</b> ${ps.length}টি</p><p><b>মোট আদায়:</b> ৳${money(total)}</p><p><b>বর্তমান মোট বকেয়া:</b> ৳${money(due)}</p><button id="exportCsv" class="secondary">পেমেন্ট CSV ডাউনলোড</button>`;$("exportCsv").onclick=()=>{const lines=[["Receipt","Date","Customer","Phone","Amount","Method"],...ps.map(p=>{const c=customers.find(x=>x.id===p.customerId)||{};return[p.receiptNo,p.paidAt,c.name,c.phone,p.amount,p.method]})];const csv="\uFEFF"+lines.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="sa-communication-payments.csv";a.click();URL.revokeObjectURL(a.href)}};
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabpane").forEach(p=>p.classList.add("hidden"));$("tab-"+b.dataset.tab).classList.remove("hidden");document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("secondary",x!==b))});
