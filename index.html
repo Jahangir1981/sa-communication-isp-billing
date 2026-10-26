@@ -77,7 +77,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* 1) Replace every placeholder with values from Firebase Console > Project settings > Your apps.
    Never put a Firebase Admin SDK private key in this file. */
@@ -199,8 +199,11 @@ $("paymentForm").addEventListener("submit",async e=>{e.preventDefault();try{
   // Generate the document ID first and save receiptNo in the initial create.
   const payRef=doc(collection(db,"payments"));
   const receiptNo="SAC-"+paymentDate.replaceAll("-","")+"-"+payRef.id.slice(-6).toUpperCase();
-  await setDoc(payRef,{...payData,receiptNo});
-  await updateDoc(doc(db,"invoices",inv.id),{paidAmount:Number(inv.paidAmount||0)+amount,updatedAt:serverTimestamp()});
+  // Save payment and invoice balance atomically: either both succeed or neither does.
+  const batch=writeBatch(db);
+  batch.set(payRef,{...payData,receiptNo});
+  batch.update(doc(db,"invoices",inv.id),{paidAmount:Number(inv.paidAmount||0)+amount,updatedAt:serverTimestamp()});
+  await batch.commit();
   await loadData();$("paymentForm").reset();$("pPaymentDate").value=today();populatePaymentSelectors();setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়েছে। রশিদ তৈরি হয়েছে।","success");showReceipt({...payData,id:payRef.id,receiptNo});
 }catch(err){setMsg("paymentMsg","পেমেন্ট সংরক্ষণ হয়নি: "+err.message,"error")}});
 $("roleForm").addEventListener("submit",async e=>{e.preventDefault();if(currentRole!=="admin")return setMsg("userMsg","শুধু Admin ভূমিকা পরিবর্তন করতে পারবেন।","error");try{const uid=$("uUid").value.trim();await setDoc(doc(db,"users",uid),{uid,name:$("uName").value.trim(),role:$("uRole").value,updatedAt:serverTimestamp(),updatedBy:currentUser.uid},{merge:true});setMsg("userMsg","ভূমিকা সংরক্ষণ হয়েছে।","success")}catch(err){setMsg("userMsg","সংরক্ষণ হয়নি: "+err.message,"error")}});
